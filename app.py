@@ -1,3 +1,6 @@
+import threading
+from datetime import datetime, timedelta
+import time
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,6 +24,52 @@ from scanners.support_level_scanner import SupportLevelScanner
 from utils.market_indices import MarketIndices
 from utils.data_fetcher import DataFetcher
 from datetime import datetime, timedelta
+
+# Initialize session state with scanner management
+if 'scanner_initialized' not in st.session_state:
+    st.session_state.scanner_initialized = False
+    st.session_state.last_scan_time = None
+    st.session_state.scan_results = {}
+    st.session_state.auto_scan_enabled = True
+    st.session_state.scan_interval = 15  # Fixed to 15 minutes
+    st.session_state.active_scanners = {
+        "MACD 15min": True,
+        "MACD 4h": True, 
+        "MACD 1d": True,
+        "Range Breakout 4h": True,
+        "Resistance Breakout 4h": True,
+        "Support Level 4h": True
+    }
+    st.session_state.scanner_initialized = True
+
+
+# Background scanning thread
+def background_scanning():
+    while True:
+        if st.session_state.auto_scan_enabled:
+            current_time = get_ist_time()
+            
+            # First run or if 15 minutes have passed since last scan
+            if (st.session_state.last_scan_time is None or 
+                current_time >= st.session_state.last_scan_time + timedelta(minutes=15)):
+                
+                try:
+                    # Run all scanners
+                    run_all_scanners()
+                    st.session_state.last_scan_time = current_time
+                except Exception as e:
+                    print(f"Background scan error: {str(e)}")
+        
+        # Sleep for 1 minute before checking again
+        time.sleep(60)
+
+# Start background thread on first run
+if not hasattr(st.session_state, 'background_thread'):
+    st.session_state.background_thread = threading.Thread(target=background_scanning, daemon=True)
+    st.session_state.background_thread.start()
+
+
+
 
 # Page configuration
 st.set_page_config(
@@ -186,10 +235,7 @@ def main():
     if time_since_container or countdown_container:
         update_counters(time_since_container, countdown_container)
 
-    # 🔁 Force full page reload every 15 minutes even if browser is inactive
-    st.markdown("""
-        <meta http-equiv="refresh" content="900">
-    """, unsafe_allow_html=True)
+
 
     # 🕒 Optional: Show visible countdown
     show_auto_refresh_timer()
@@ -602,28 +648,10 @@ def send_telegram_notification(scan_results):
 
 
 
+# Modify the handle_auto_scan function to remove redundant logic
 def handle_auto_scan():
-    """Handle automatic scanning with immediate first scan"""
-    current_time = get_ist_time()
-    
-    # First run - scan immediately if no previous scan time
-    if st.session_state.last_scan_time is None:
-        run_all_scanners()
-        st.session_state.last_scan_time = current_time
-        time.sleep(1)  # Small delay before refresh
-        st.rerun()
-    else:
-        # Subsequent runs - check if 15 minutes have passed
-        next_scan = st.session_state.last_scan_time + timedelta(minutes=15)
-        if current_time >= next_scan:
-            run_all_scanners()
-            st.session_state.last_scan_time = current_time
-            time.sleep(1)  # Small delay before refresh
-            st.rerun()
-    
-    # Remove the visual indicator from here since we're handling it in update_counters
-    time.sleep(1)
-
+    """Handle automatic scanning - now managed by background thread"""
+    pass
 
 def export_results():
     """Export scan results to CSV"""
