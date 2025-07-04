@@ -46,28 +46,50 @@ if 'scanner_initialized' not in st.session_state:
 # Background scanning thread
 def background_scanning():
     while True:
-        if st.session_state.auto_scan_enabled:
-            current_time = get_ist_time()
-            
-            # First run or if 15 minutes have passed since last scan
-            if (st.session_state.last_scan_time is None or 
-                current_time >= st.session_state.last_scan_time + timedelta(minutes=15)):
+        try:
+            if st.session_state.auto_scan_enabled:
+                current_time = get_ist_time()
                 
-                try:
+                # First run or if 15 minutes have passed since last scan
+                if (st.session_state.last_scan_time is None or 
+                    current_time >= st.session_state.last_scan_time + timedelta(minutes=15)):
+                    
                     # Run all scanners
                     run_all_scanners()
                     st.session_state.last_scan_time = current_time
-                except Exception as e:
-                    print(f"Background scan error: {str(e)}")
-        
-        # Sleep for 1 minute before checking again
-        time.sleep(60)
+            
+            # Sleep for 1 minute before checking again
+            time.sleep(60)
+            
+        except Exception as e:
+            print(f"Background scan error: {str(e)}")
+            # Wait longer if error occurs to prevent rapid retries
+            time.sleep(300)
 
-# Start background thread on first run
+# Start background thread only if auto-scan is enabled
 if not hasattr(st.session_state, 'background_thread'):
-    st.session_state.background_thread = threading.Thread(target=background_scanning, daemon=True)
-    st.session_state.background_thread.start()
+    st.session_state.background_thread = None
+    if st.session_state.auto_scan_enabled:
+        st.session_state.background_thread = threading.Thread(
+            target=background_scanning, 
+            daemon=True
+        )
+        st.session_state.background_thread.start()
 
+
+# Add this to handle auto-scan toggle changes
+def handle_auto_scan_toggle():
+    """Handle changes to the auto-scan toggle"""
+    if st.session_state.auto_scan_enabled and not st.session_state.background_thread:
+        # Start the thread if auto-scan was just enabled
+        st.session_state.background_thread = threading.Thread(
+            target=background_scanning, 
+            daemon=True
+        )
+        st.session_state.background_thread.start()
+    elif not st.session_state.auto_scan_enabled and st.session_state.background_thread:
+        # Can't actually stop the thread, but we'll let it die naturally
+        st.session_state.background_thread = None
 
 
 
@@ -166,8 +188,11 @@ def main():
         
         # Auto-scan settings
         st.markdown("#### 🔄 Auto-Scan Settings")
+
+        # In your main function, modify the auto-scan checkbox to call the handler:
+        auto_scan = st.checkbox("Enable Auto-Scan (15min intervals)", value=st.session_state.auto_scan_enabled, key="auto_scan_checkbox",on_change=handle_auto_scan_toggle)
         
-        auto_scan = st.checkbox("Enable Auto-Scan (15min intervals)", value=st.session_state.auto_scan_enabled, key="auto_scan_checkbox")
+       
 
         
         
